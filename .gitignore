@@ -1,0 +1,19 @@
+# Секреты
+.env
+
+# Виртуальные окружения
+venv/
+env/
+.venv/
+bin/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Системные файлы
+.DS_Store
