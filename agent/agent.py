@@ -3,10 +3,12 @@ import os
 from openai import OpenAI
 import json
 import pandas as pd
+from dotenv import load_dotenv
 
 class FoodTrackerAgent:
     def __init__(self):
 
+        load_dotenv()
         self.client = OpenAI(
             api_key=os.getenv("OPENAI_API_KEY")
         )
@@ -38,7 +40,7 @@ class FoodTrackerAgent:
             {"role": "user", "content": meal_description}
         ]
 
-        return self.ask_agent(meal_description, tools, messages)
+        return self.ask_agent(tools, messages)
 
 
 
