@@ -28,8 +28,9 @@ class FoodTrackerAgent:
                             "calories": {"type": "integer", "description": "Калории"},
                             "protein": {"type": "integer"},
                             'count': {'type':['string', 'integer'], 'description':'Количество порций или вес продукта'},
+                            'meal_type': {'type':'string', 'description':'Тип приема пищи (завтрак, обед, ужин, перекус или иное)'}
                         },
-                        "required": ["food_item", "calories", 'protein', 'count'],
+                        "required": ["food_item", "calories", 'protein', 'count', 'meal_type'],
                     }
                 }
             }

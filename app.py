@@ -1,77 +1,120 @@
 import streamlit as st
-import os
 import json
-from openai import OpenAI
-from dotenv import load_dotenv
 from agent.agent import FoodTrackerAgent
 
-agent = FoodTrackerAgent()
+# ==========================================
+# 1. ИНИЦИАЛИЗАЦИЯ (СТРОГО ОДИН РАЗ)
+# ==========================================
+if "meal_types" not in st.session_state:
+    st.session_state.meal_types = ["Завтрак", "Обед", "Ужин", "Перекус"]
 
+if "diary" not in st.session_state:
+    st.session_state.diary = {m: [] for m in st.session_state.meal_types}
 
-def save_log_meal(meal_name, calories, protein, carbs, fats):
-    """Сохраняет данные о приеме пищи в сессию Streamlit (вместо БД)"""
-    if "history" not in st.session_state:
-        st.session_state.history = []
-    
-    new_entry = {
-        "Блюдо": meal_name,
-        "Калории": calories,
-        "Белки": protein,
-        "Углеводы": carbs,
-        "Жиры": fats
-    }
-    st.session_state.history.append(new_entry)
-    return f"Успешно записал {meal_name}!"
+if "agent" not in st.session_state:
+    st.session_state.agent = FoodTrackerAgent()
 
-
-
+# ==========================================
+# 2. НАСТРОЙКИ СТРАНИЦЫ
+# ==========================================
 st.set_page_config(page_title="AI Food Tracker", layout="wide")
-st.title("🥗 AI Трекер Питания")
 
+# ==========================================
+# 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ==========================================
+def save_log_meal(meal_name, calories, protein, carbs, fats, meal_type):
+    # Если агент придумал новый тип, добавляем его в структуру
 
-col_chat, col_stats = st.columns([1, 1])
+    meal_type = meal_type.capitalize()
+    if meal_type not in st.session_state.diary:
+        st.session_state.diary[meal_type] = []
+        if meal_type not in st.session_state.meal_types:
+            st.session_state.meal_types.append(meal_type)
 
-with col_chat:
-    st.subheader("О чем ты хочешь рассказать агенту?")
-    user_input = st.text_input("Например: Я съел большой бургер и выпил колу", key="input")
+    # Добавляем запись
+    st.session_state.diary[meal_type].append({
+        "name": meal_name,
+        "cal": calories,
+        "p": protein,
+        "c": carbs,
+        "f": fats
+    })
+
+# ==========================================
+# 4. ИНТЕРФЕЙС (SIDEBAR)
+# ==========================================
+with st.sidebar:
+    st.header("⚙️ Настройки")
+    new_type = st.text_input("Новая категория")
+    if st.button("Добавить категорию"):
+        if new_type and new_type not in st.session_state.meal_types:
+            st.session_state.meal_types.append(new_type)
+            st.session_state.diary[new_type] = []
+            st.rerun()
     
-    if st.button("Отправить"):
-        if user_input:
-            # Запрос к модели
+    if st.button("🗑️ Очистить всё"):
+        st.session_state.diary = {m: [] for m in st.session_state.meal_types}
+        st.rerun()
 
-            msg = agent.save_meal(user_input)
-            
-            if msg.tool_calls:
-                for tool_call in msg.tool_calls:
-                    args = json.loads(tool_call.function.arguments)
-                    status = save_log_meal(
-                        meal_name=args['food_item'],
-                        calories=args['calories'],
-                        protein=args['protein'],
-                        carbs=0,
-                        fats=0
-                    )
-                    st.success(status)
+# ==========================================
+# 5. ОСНОВНОЙ КОНТЕНТ (ОДИН ВЫЗОВ COLUMNS)
+# ==========================================
+st.title("🥗 Умный трекер питания")
+
+# Создаем ОДНУ сетку из двух колонок
+left_col, right_col = st.columns([1, 1])
+
+# --- ЛЕВАЯ КОЛОНКА: ЧАТ ---
+with left_col:
+    st.subheader("💬 Чат с агентом")
+    # chat_input ВСЕГДА прижат к низу колонки
+    user_query = st.chat_input("Напиши, что ты съел...")
+    
+    if user_query:
+        # Получаем ответ от ML-агента
+        msg = st.session_state.agent.save_meal(user_query)
+        
+        if msg.tool_calls:
+            for tool_call in msg.tool_calls:
+                args = json.loads(tool_call.function.arguments)
+                save_log_meal(
+                    meal_name=args.get('food_item', 'Еда'),
+                    calories=args.get('calories', 0),
+                    protein=args.get('protein', 0),
+                    carbs=args.get('carbs', 0),
+                    fats=args.get('fats', 0),
+                    meal_type=args.get('meal_type', 'Перекус')
+                )
+            st.success("Данные обновлены!")
+        elif msg.content:
+            st.info(msg.content)
+
+# --- ПРАВАЯ КОЛОНКА: ДНЕВНИК ---
+with right_col:
+    st.subheader("📊 Дневник питания")
+    day_total = 0
+
+    # Цикл отрисовки категорий (ТОЛЬКО ЗДЕСЬ)
+    for m_type in st.session_state.meal_types:
+        items = st.session_state.diary.get(m_type, [])
+        
+        with st.expander(f"{m_type} ({len(items)})", expanded=True):
+            if not items:
+                st.caption("Пока нет записей")
             else:
-                st.info(msg.content)
+                current_meal_total = 0
+                for item in items:
+                    st.write(f"🍴 **{item['name']}**")
+                    st.caption(f"🔥 {item['cal']} ккал | Б:{item['p']} Ж:{item['f']} У:{item['c']}")
+                    current_meal_total += item['cal']
+                    day_total += item['cal']
+                
+                st.divider()
+                st.write(f"Всего за {m_type.lower()}: **{current_meal_total} ккал**")
 
-# --- 4. КРАСИВЫЙ ВЫВОД (Dashboard) ---
-with col_stats:
-    st.subheader("Твой дневник питания")
-    if "history" in st.session_state and st.session_state.history:
-        # Показываем общую сумму калорий за сегодня
-        total_cal = sum(item['Калории'] for item in st.session_state.history)
-        st.metric("Всего калорий за день", f"{total_cal} ккал")
-        
-        # Выводим таблицу
-        st.table(st.session_state.history)
-        
-        # Добавим визуализацию (мини-график)
-        chart_data = {
-            "Белки": sum(i['Белки'] for i in st.session_state.history),
-            "Жиры": sum(i['Жиры'] for i in st.session_state.history),
-            "Углеводы": sum(i['Углеводы'] for i in st.session_state.history)
-        }
-        st.bar_chart(chart_data)
-    else:
-        st.write("Тут пока пусто. Расскажи агенту, что ты поел!")
+    # Итоговая статистика дня
+    st.divider()
+    st.metric("ИТОГО ЗА ДЕНЬ", f"{day_total} ккал")
+    
+    norm = 2000
+    st.progress(min(day_total / norm, 1.0), text=f"Цель: {norm} ккал")
